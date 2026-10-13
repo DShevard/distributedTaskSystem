@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS jobs (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  a DOUBLE PRECISION NOT NULL DEFAULT 0,
+  b DOUBLE PRECISION NOT NULL DEFAULT 0,
+  c DOUBLE PRECISION NOT NULL DEFAULT 0,
+  d DOUBLE PRECISION NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL CHECK(duration_ms BETWEEN 0 AND 300000),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','completed','failed')),
+  attempt INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3 CHECK(max_attempts BETWEEN 1 AND 10),
+  worker_name TEXT,
+  result TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  lease_until TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs (priority DESC, id ASC) WHERE status='queued';
+CREATE TABLE IF NOT EXISTS execution_history (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES jobs(id),
+  attempt INTEGER NOT NULL,
+  worker_name TEXT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  status TEXT NOT NULL,
+  UNIQUE(job_id,attempt)
+);

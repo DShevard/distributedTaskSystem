@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: dts
+      POSTGRES_PASSWORD: local_demo_only
+      POSTGRES_DB: distributed_task_system
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dts -d distributed_task_system"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["scheduler"]
+    environment:
+      DATABASE_URL: postgresql://dts:local_demo_only@postgres/distributed_task_system
+      WORKER_PORT: "9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["api"]
+    environment:
+      DATABASE_URL: postgresql://dts:local_demo_only@postgres/distributed_task_system
+      API_PORT: "8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["worker"]
+    environment:
+      SCHEDULER_HOST: scheduler
+      WORKER_PORT: "9000"
+      WORKER_NAME: worker
+    depends_on:
+      - scheduler
+volumes:
+  pgdata:

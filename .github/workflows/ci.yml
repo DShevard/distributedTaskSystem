@@ -1,0 +1,60 @@
+name: DistributedTaskSystem CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image and run tests
+        run: docker compose build
+
+      - name: Start services
+        run: docker compose up -d --scale worker=3
+
+      - name: Wait for API
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Test task execution
+        run: |
+          RESPONSE=$(curl -fsS -X POST http://localhost:8080/tasks \
+            -H "Content-Type: application/json" \
+            -d '{"name":"discriminant","priority":10,"duration_ms":1000,"max_attempts":3,"a":2,"b":5,"c":3}')
+
+          echo "$RESPONSE"
+
+          TASK_ID=$(echo "$RESPONSE" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin)["id"])')
+
+          for i in {1..30}; do
+            RESULT=$(curl -fsS "http://localhost:8080/tasks/$TASK_ID")
+
+            if echo "$RESULT" | python3 -c 'import json,sys; j=json.load(sys.stdin); sys.exit(0 if j["status"]=="completed" and abs(float(j["result"])-1.0)<1e-6 else 1)'; then
+              echo "Integration test passed!"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Integration test failed"
+          docker compose logs
+          exit 1
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
